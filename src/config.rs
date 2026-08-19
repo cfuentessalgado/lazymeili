@@ -11,6 +11,49 @@ use uuid::Uuid;
 
 pub const CONFIG_VERSION: u32 = 1;
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ConnectionColor {
+    #[default]
+    Violet,
+    Blue,
+    Cyan,
+    Lime,
+    Yellow,
+    Orange,
+    Red,
+    Pink,
+    Gray,
+}
+
+impl ConnectionColor {
+    pub const ALL: [Self; 9] = [
+        Self::Violet,
+        Self::Blue,
+        Self::Cyan,
+        Self::Lime,
+        Self::Yellow,
+        Self::Orange,
+        Self::Red,
+        Self::Pink,
+        Self::Gray,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Violet => "violet",
+            Self::Blue => "blue",
+            Self::Cyan => "cyan",
+            Self::Lime => "lime",
+            Self::Yellow => "yellow",
+            Self::Orange => "orange",
+            Self::Red => "red",
+            Self::Pink => "pink",
+            Self::Gray => "gray",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Application {
     pub id: Uuid,
@@ -18,6 +61,8 @@ pub struct Application {
     pub url: String,
     #[serde(default)]
     pub has_api_key: bool,
+    #[serde(default)]
+    pub color: ConnectionColor,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -51,14 +96,36 @@ pub struct Paths {
 
 impl Paths {
     pub fn discover() -> anyhow::Result<Self> {
-        let dirs = ProjectDirs::from("dev", "mtui", "mtui").ok_or_else(|| {
+        let dirs = ProjectDirs::from("dev", "lazymeili", "lazymeili").ok_or_else(|| {
             anyhow::anyhow!("cannot determine the operating system config directory")
         })?;
-        Ok(Self {
+        let legacy_dirs = ProjectDirs::from("dev", "mtui", "mtui").ok_or_else(|| {
+            anyhow::anyhow!("cannot determine the operating system config directory")
+        })?;
+        let paths = Self {
             config: dirs.config_dir().join("config.toml"),
             vault: dirs.config_dir().join("secrets.age"),
-        })
+        };
+        migrate_legacy_file(&legacy_dirs.config_dir().join("config.toml"), &paths.config)?;
+        migrate_legacy_file(&legacy_dirs.config_dir().join("secrets.age"), &paths.vault)?;
+        Ok(paths)
     }
+}
+
+fn migrate_legacy_file(source: &Path, destination: &Path) -> anyhow::Result<()> {
+    if !source.exists() || destination.exists() {
+        return Ok(());
+    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("invalid config path"))?;
+    fs::create_dir_all(parent)?;
+    if fs::rename(source, destination).is_err() {
+        fs::copy(source, destination)?;
+        set_private(destination)?;
+        fs::remove_file(source)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +147,7 @@ impl ConfigStore {
         let config: Config = toml::from_str(&content)?;
         anyhow::ensure!(
             config.version <= CONFIG_VERSION,
-            "config version {} is newer than this mtui supports",
+            "config version {} is newer than LazyMeili supports",
             config.version
         );
         Ok(config)
@@ -159,6 +226,7 @@ mod tests {
             name: "Local".into(),
             url: "http://localhost:7700".into(),
             has_api_key: true,
+            color: ConnectionColor::Red,
         };
         store.upsert(&mut config, app.clone()).unwrap();
         assert_eq!(store.load().unwrap().applications, vec![app]);
@@ -174,6 +242,30 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    #[test]
+    fn migrates_legacy_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("old/config.toml");
+        let destination = dir.path().join("new/config.toml");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, "version = 1").unwrap();
+
+        migrate_legacy_file(&source, &destination).unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(fs::read_to_string(destination).unwrap(), "version = 1");
+    }
+
+    #[test]
+    fn old_configs_get_the_default_connection_color() {
+        let id = Uuid::new_v4();
+        let text = format!(
+            "version = 1\nselected = \"{id}\"\n\n[[applications]]\nid = \"{id}\"\nname = \"Local\"\nurl = \"http://localhost:7700\"\nhas_api_key = false\n"
+        );
+        let config: Config = toml::from_str(&text).unwrap();
+        assert_eq!(config.applications[0].color, ConnectionColor::Violet);
     }
 
     #[test]

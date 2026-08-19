@@ -2114,6 +2114,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazymeili"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "anyhow",
+ "async-trait",
+ "base64",
+ "chrono",
+ "clap",
+ "crossterm",
+ "directories",
+ "futures",
+ "insta",
+ "keyring",
+ "meilisearch-sdk",
+ "ratatui",
+ "reqwest",
+ "rpassword",
+ "semver",
+ "serde",
+ "serde_json",
+ "similar",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-width",
+ "uuid",
+ "wiremock",
+ "zeroize",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2318,41 +2353,6 @@ dependencies = [
  "kem",
  "rand_core 0.6.4",
  "sha3",
-]
-
-[[package]]
-name = "mtui"
-version = "0.1.0"
-dependencies = [
- "age",
- "anyhow",
- "async-trait",
- "base64",
- "chrono",
- "clap",
- "crossterm",
- "directories",
- "futures",
- "insta",
- "keyring",
- "meilisearch-sdk",
- "ratatui",
- "reqwest",
- "rpassword",
- "semver",
- "serde",
- "serde_json",
- "similar",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "toml 0.9.12+spec-1.1.0",
- "tracing",
- "tracing-subscriber",
- "unicode-width",
- "uuid",
- "wiremock",
- "zeroize",
 ]
 
 [[package]]

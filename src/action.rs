@@ -14,6 +14,7 @@ pub enum Action {
     Create,
     Edit,
     Delete,
+    Color,
     Search,
     Yank,
     Applications,
@@ -59,6 +60,7 @@ pub fn map_key(key: KeyEvent, editing: bool) -> Action {
         KeyCode::Char('n') => Action::Create,
         KeyCode::Char('e') => Action::Edit,
         KeyCode::Char('d') => Action::Delete,
+        KeyCode::Char('c') => Action::Color,
         KeyCode::Char('/') => Action::Search,
         KeyCode::Char('y') => Action::Yank,
         KeyCode::Char('a') => Action::Applications,
@@ -93,7 +95,7 @@ mod tests {
     }
 
     #[test]
-    fn y_yanks_and_a_selects_applications() {
+    fn y_yanks_a_selects_applications_and_c_opens_colors() {
         assert_eq!(
             map_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE), false),
             Action::Yank
@@ -101,6 +103,10 @@ mod tests {
         assert_eq!(
             map_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE), false),
             Action::Applications
+        );
+        assert_eq!(
+            map_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE), false),
+            Action::Color
         );
     }
 }

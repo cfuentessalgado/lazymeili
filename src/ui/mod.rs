@@ -1,19 +1,20 @@
 pub mod components;
 pub mod screens;
+pub mod theme;
 
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::Line,
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Tabs, Wrap},
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Tabs, Wrap},
 };
 
 use crate::app::{App, Overlay, Route};
 
-pub const ACCENT: Color = Color::Cyan;
-
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
+    let accent = active_accent(app);
+    frame.render_widget(Block::default().style(theme::base()), frame.area());
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -22,33 +23,47 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
             Constraint::Length(3),
         ])
         .split(frame.area());
-    draw_tabs(frame, app, areas[0]);
-    draw_screen(frame, app, areas[1]);
-    draw_status(frame, app, areas[2]);
+    draw_tabs(frame, app, areas[0], accent);
+    draw_screen(frame, app, areas[1], accent);
+    draw_status(frame, app, areas[2], accent);
     if let Some(overlay) = &app.overlay {
-        draw_overlay(frame, overlay);
+        draw_overlay(frame, overlay, accent);
     }
 }
 
-fn draw_tabs(frame: &mut Frame<'_>, app: &App, area: Rect) {
+fn draw_tabs(frame: &mut Frame<'_>, app: &App, area: Rect, accent: ratatui::style::Color) {
     let selected = Route::ALL
         .iter()
         .position(|route| *route == app.route)
         .unwrap_or(0);
     let tabs = Tabs::new(Route::ALL.iter().map(|route| route.title()))
         .select(selected)
-        .block(Block::default().borders(Borders::ALL).title(" mtui "))
-        .highlight_style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
-        .divider("│");
+        .style(Style::new().fg(theme::MUTED).bg(theme::SURFACE))
+        .block(
+            panel(
+                Line::from(vec![
+                    Span::styled(" LazyMeili ", theme::title(accent)),
+                    Span::styled("• Meilisearch control ", theme::muted().bg(theme::SURFACE)),
+                ]),
+                accent,
+            )
+            .title(connection_indicator(app)),
+        )
+        .highlight_style(theme::selected(accent))
+        .divider(Span::styled(" │ ", Style::new().fg(theme::BORDER)));
     frame.render_widget(tabs, area);
 }
 
-fn draw_screen(frame: &mut Frame<'_>, app: &App, area: Rect) {
+fn draw_screen(frame: &mut Frame<'_>, app: &App, area: Rect, accent: ratatui::style::Color) {
     if app.loading {
         frame.render_widget(
-            Paragraph::new("Loading…")
-                .alignment(Alignment::Center)
-                .block(Block::default().borders(Borders::ALL)),
+            Paragraph::new(Line::from(vec![
+                Span::styled("◆ ", Style::new().fg(accent)),
+                Span::styled("Loading…", Style::new().fg(theme::TEXT)),
+            ]))
+            .style(theme::panel())
+            .alignment(Alignment::Center)
+            .block(panel(" Working ", accent)),
             area,
         );
         return;
@@ -58,23 +73,40 @@ fn draw_screen(frame: &mut Frame<'_>, app: &App, area: Rect) {
             frame,
             area,
             "Applications",
-            &["Name", "URL", "Credential"],
+            &["Name", "URL", "Color", "Credential", "Connection"],
             app.config
                 .applications
                 .iter()
                 .map(|item| {
+                    let is_active = app.active == Some(item.id);
+                    let connection = if !is_active {
+                        "saved"
+                    } else if app.service.is_some() {
+                        "connected"
+                    } else if app.loading {
+                        "connecting"
+                    } else {
+                        "disconnected"
+                    };
                     vec![
-                        item.name.clone(),
+                        if is_active {
+                            format!("● {}", item.name)
+                        } else {
+                            item.name.clone()
+                        },
                         item.url.clone(),
+                        item.color.label().into(),
                         if item.has_api_key {
                             "keychain/vault".into()
                         } else {
                             "none".into()
                         },
+                        connection.into(),
                     ]
                 })
                 .collect(),
             app.selected,
+            accent,
         ),
         Route::Dashboard => {
             let rows = app
@@ -127,6 +159,7 @@ fn draw_screen(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 &["UID", "Primary key", "Documents", "State"],
                 rows,
                 app.selected,
+                accent,
             );
         }
         Route::Documents => {
@@ -153,16 +186,17 @@ fn draw_screen(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 &["First field", "JSON preview"],
                 rows,
                 app.selected,
+                accent,
             );
         }
         Route::Settings => frame.render_widget(
             Paragraph::new(serde_json::to_string_pretty(&app.settings).unwrap_or_default())
                 .wrap(Wrap { trim: false })
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Index settings JSON — e opens $VISUAL/$EDITOR "),
-                ),
+                .style(theme::panel())
+                .block(panel(
+                    " Index settings JSON — e opens $VISUAL/$EDITOR ",
+                    accent,
+                )),
             area,
         ),
         Route::Tasks => components::table(
@@ -186,6 +220,7 @@ fn draw_screen(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 })
                 .collect(),
             app.selected,
+            accent,
         ),
         Route::Keys => components::table(
             frame,
@@ -214,53 +249,108 @@ fn draw_screen(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 })
                 .collect(),
             app.selected,
+            accent,
         ),
     }
 }
 
-fn draw_status(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let screen_keys = match app.route {
-        Route::Applications => {
-            "↑/k ↓/j select  Enter connect  n new  e edit  d remove  r reconnect"
-        }
-        Route::Dashboard => {
-            "↑/k ↓/j select  Enter documents  / filter  n new  e edit primary key  d delete  PgUp/PgDn page"
-        }
-        Route::Documents => {
-            "↑/k ↓/j select  Enter JSON  / search  n upload  e edit  d delete  r refresh"
-        }
-        Route::Settings => "Enter view JSON  e edit  r refresh",
-        Route::Tasks => {
-            "↑/k ↓/j select  Enter details  / filter  d cancel  r refresh  PgUp/PgDn page"
-        }
-        Route::Keys => {
-            "↑/k ↓/j select  Enter details  n new  e edit  d delete  y yank new key  r refresh"
-        }
+fn draw_status(frame: &mut Frame<'_>, app: &App, area: Rect, accent: ratatui::style::Color) {
+    let screen_keys: &[(&str, &str)] = match app.route {
+        Route::Applications => &[
+            ("↑/↓", "select"),
+            ("Enter", "connect"),
+            ("n", "new"),
+            ("e", "edit"),
+            ("c", "color"),
+            ("d", "remove"),
+            ("r", "reconnect"),
+        ],
+        Route::Dashboard => &[
+            ("↑/↓", "select"),
+            ("Enter", "documents"),
+            ("/", "filter"),
+            ("n", "new"),
+            ("e", "primary key"),
+            ("d", "delete"),
+            ("Pg±", "page"),
+        ],
+        Route::Documents => &[
+            ("↑/↓", "select"),
+            ("Enter", "JSON"),
+            ("/", "search"),
+            ("n", "upload"),
+            ("e", "edit"),
+            ("d", "delete"),
+            ("r", "refresh"),
+        ],
+        Route::Settings => &[("Enter", "view JSON"), ("e", "edit"), ("r", "refresh")],
+        Route::Tasks => &[
+            ("↑/↓", "select"),
+            ("Enter", "details"),
+            ("/", "filter"),
+            ("d", "cancel"),
+            ("r", "refresh"),
+            ("Pg±", "page"),
+        ],
+        Route::Keys => &[
+            ("↑/↓", "select"),
+            ("Enter", "details"),
+            ("n", "new"),
+            ("e", "edit"),
+            ("d", "delete"),
+            ("y", "yank"),
+            ("r", "refresh"),
+        ],
     };
-    let global_keys = "a applications  h/l or Tab/Shift-Tab screens  s settings  t tasks  K keys  D dump  ? help  q quit";
+    let global_keys = &[
+        ("Tab", "screens"),
+        ("a", "apps"),
+        ("s", "settings"),
+        ("t", "tasks"),
+        ("K", "keys"),
+        ("D", "dump"),
+        ("?", "help"),
+        ("q", "quit"),
+    ];
     let notice = app.notice.as_deref().unwrap_or("");
+    let notice_style = if notice.to_ascii_lowercase().contains("error")
+        || notice.to_ascii_lowercase().contains("failed")
+    {
+        Style::new().fg(theme::DANGER).bg(theme::BG)
+    } else {
+        Style::new().fg(theme::SUCCESS).bg(theme::BG)
+    };
     frame.render_widget(
         Paragraph::new(vec![
-            Line::from(screen_keys),
-            Line::from(global_keys),
-            Line::from(notice),
+            hint_line(screen_keys, accent),
+            hint_line(global_keys, accent),
+            Line::from(vec![
+                Span::styled(" STATUS ", theme::key(accent)),
+                Span::raw(" "),
+                Span::styled(
+                    if notice.is_empty() { "Ready" } else { notice },
+                    notice_style,
+                ),
+            ]),
         ])
-        .style(Style::default().fg(Color::DarkGray)),
+        .style(theme::muted()),
         area,
     );
 }
 
-fn draw_overlay(frame: &mut Frame<'_>, overlay: &Overlay) {
+fn draw_overlay(frame: &mut Frame<'_>, overlay: &Overlay, accent: ratatui::style::Color) {
     let area = centered(75, 75, frame.area());
     frame.render_widget(Clear, area);
     match overlay {
-        Overlay::KeyForm(form) => draw_key_form(frame, area, form),
+        Overlay::KeyForm(form) => draw_key_form(frame, area, form, accent),
+        Overlay::ColorPicker { cursor, .. } => draw_color_picker(frame, area, *cursor, accent),
         Overlay::Help => {
             let items = [
                 "Arrow keys or h/j/k/l  Navigate",
                 "Tab / Shift-Tab       Change screen",
                 "Enter                  Open or confirm",
                 "n / e / d              New, edit, delete/cancel",
+                "c                      Assign a connection color",
                 "y                      Yank a newly created key",
                 "/                      Search or filter",
                 "r / PageUp/PageDown     Refresh / page",
@@ -270,18 +360,17 @@ fn draw_overlay(frame: &mut Frame<'_>, overlay: &Overlay) {
                 "q / Ctrl-C             Quit",
             ];
             frame.render_widget(
-                List::new(items.map(ListItem::new)).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Help — Esc to close "),
-                ),
+                List::new(items.map(ListItem::new))
+                    .style(theme::panel())
+                    .block(panel(" Help — Esc to close ", accent)),
                 area,
             );
         }
         Overlay::Message { title, body } | Overlay::Confirm { title, body } => frame.render_widget(
             Paragraph::new(body.as_str())
+                .style(theme::panel())
                 .wrap(Wrap { trim: false })
-                .block(Block::default().borders(Borders::ALL).title(title.as_str())),
+                .block(panel(format!(" {title} "), accent)),
             area,
         ),
         Overlay::Input {
@@ -295,25 +384,64 @@ fn draw_overlay(frame: &mut Frame<'_>, overlay: &Overlay) {
                 value.clone()
             };
             frame.render_widget(
-                Paragraph::new(shown).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!(" {title} — Enter to save ")),
-                ),
+                Paragraph::new(shown)
+                    .style(theme::panel())
+                    .block(panel(format!(" {title} — Enter to save "), accent)),
                 centered(75, 20, frame.area()),
             );
         }
     }
 }
 
-fn draw_key_form(frame: &mut Frame<'_>, area: Rect, form: &crate::app::KeyFormState) {
+fn draw_color_picker(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    cursor: usize,
+    accent: ratatui::style::Color,
+) {
+    let area = centered(55, 75, area);
+    let items = crate::config::ConnectionColor::ALL
+        .iter()
+        .enumerate()
+        .map(|(index, color)| {
+            let assigned = theme::connection_color(*color);
+            let marker = if index == cursor { " ▸ " } else { "   " };
+            ListItem::new(Line::from(vec![
+                Span::styled(marker, Style::new().fg(assigned)),
+                Span::styled("  ", Style::new().bg(assigned)),
+                Span::styled(format!("  {}", color.label()), Style::new().fg(theme::TEXT)),
+            ]))
+            .style(if index == cursor {
+                Style::new()
+                    .bg(theme::SURFACE_ALT)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                theme::panel()
+            })
+        });
+    frame.render_widget(
+        List::new(items).style(theme::panel()).block(panel(
+            " Connection color — ↑/↓ choose, Enter save, Esc cancel ",
+            accent,
+        )),
+        area,
+    );
+}
+
+fn draw_key_form(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    form: &crate::app::KeyFormState,
+    accent: ratatui::style::Color,
+) {
     if form.picking_actions {
-        draw_action_picker(frame, area, form);
+        draw_action_picker(frame, area, form, accent);
         return;
     }
-    let outer = Block::default()
-        .borders(Borders::ALL)
-        .title(" Create API key — Tab/↑/↓ fields, Enter next/submit, Esc cancel ");
+    let outer = panel(
+        " Create API key — Tab/↑/↓ fields, Enter next/submit, Esc cancel ",
+        accent,
+    );
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
     let rows = Layout::vertical([
@@ -349,16 +477,22 @@ fn draw_key_form(frame: &mut Frame<'_>, area: Rect, form: &crate::app::KeyFormSt
     ];
     for (index, (label, value)) in fields.into_iter().enumerate() {
         let style = if index == form.focus {
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+            Style::new()
+                .fg(accent)
+                .bg(theme::SURFACE)
+                .add_modifier(Modifier::BOLD)
         } else {
-            Style::default()
+            theme::border()
         };
         frame.render_widget(
-            Paragraph::new(value).block(
+            Paragraph::new(value).style(theme::panel()).block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
                     .border_style(style)
-                    .title(format!(" {label} ")),
+                    .title_style(style)
+                    .title(format!(" {label} "))
+                    .style(theme::panel()),
             ),
             rows[index],
         );
@@ -367,12 +501,17 @@ fn draw_key_form(frame: &mut Frame<'_>, area: Rect, form: &crate::app::KeyFormSt
         Paragraph::new(
             "The UUID cannot authenticate. The secret API key appears once after creation; press y there.",
         )
-        .style(Style::default().fg(Color::DarkGray)),
+        .style(theme::muted().bg(theme::SURFACE)),
         rows[7],
     );
 }
 
-fn draw_action_picker(frame: &mut Frame<'_>, area: Rect, form: &crate::app::KeyFormState) {
+fn draw_action_picker(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    form: &crate::app::KeyFormState,
+    accent: ratatui::style::Color,
+) {
     let areas = Layout::vertical([Constraint::Min(5), Constraint::Length(2)]).split(area);
     let visible = usize::from(areas[0].height.saturating_sub(2)).max(1);
     let start = form
@@ -391,25 +530,26 @@ fn draw_action_picker(frame: &mut Frame<'_>, area: Rect, form: &crate::app::KeyF
                 "[ ]"
             };
             let style = if index == form.action_cursor {
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+                theme::selected(accent)
+            } else if mark == "[x]" {
+                Style::new().fg(theme::SUCCESS).bg(theme::SURFACE)
             } else {
-                Style::default()
+                theme::panel()
             };
             ListItem::new(format!("{mark} {action}")).style(style)
         });
     frame.render_widget(
-        List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Select actions — ↑/↓ move, Space toggle, Enter confirm, Esc back "),
-        ),
+        List::new(items).style(theme::panel()).block(panel(
+            " Select actions — ↑/↓ move, Space toggle, Enter confirm, Esc back ",
+            accent,
+        )),
         areas[0],
     );
     let current = crate::app::API_KEY_ACTIONS[form.action_cursor];
     frame.render_widget(
         Paragraph::new(format!("{current}: {}", action_help(current)))
             .wrap(Wrap { trim: true })
-            .style(Style::default().fg(Color::DarkGray)),
+            .style(theme::muted()),
         areas[1],
     );
 }
@@ -475,6 +615,92 @@ fn elapsed(task: &crate::meili::Task) -> String {
         "—".into()
     }
 }
+fn active_accent(app: &App) -> ratatui::style::Color {
+    app.active
+        .and_then(|active_id| {
+            app.config
+                .applications
+                .iter()
+                .find(|connection| connection.id == active_id)
+        })
+        .map_or(theme::ACCENT, |connection| {
+            theme::connection_color(connection.color)
+        })
+}
+
+fn connection_indicator(app: &App) -> Line<'static> {
+    let Some(active_id) = app.active else {
+        return Line::from(Span::styled(
+            " ● NO CONNECTION ",
+            Style::new()
+                .fg(theme::BG)
+                .bg(theme::DANGER)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .right_aligned();
+    };
+    let Some(connection) = app
+        .config
+        .applications
+        .iter()
+        .find(|connection| connection.id == active_id)
+    else {
+        return Line::from(Span::styled(
+            " ● CONNECTION MISSING ",
+            Style::new()
+                .fg(theme::BG)
+                .bg(theme::DANGER)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .right_aligned();
+    };
+    let (label, color) = if app.service.is_some() {
+        ("CONNECTED", theme::SUCCESS)
+    } else if app.loading {
+        ("CONNECTING", theme::WARNING)
+    } else {
+        ("DISCONNECTED", theme::DANGER)
+    };
+    Line::from(vec![
+        Span::styled(
+            "  ",
+            Style::new().bg(theme::connection_color(connection.color)),
+        ),
+        Span::styled(
+            format!(" {} · {} ", connection.name, connection.url),
+            Style::new().fg(theme::TEXT).bg(theme::SURFACE),
+        ),
+        Span::styled(
+            format!(" ● {label} "),
+            Style::new()
+                .fg(theme::BG)
+                .bg(color)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])
+    .right_aligned()
+}
+
+fn hint_line(hints: &[(&str, &str)], accent: ratatui::style::Color) -> Line<'static> {
+    let mut spans = Vec::with_capacity(hints.len() * 3);
+    for (key, label) in hints {
+        spans.push(Span::styled(format!(" {key} "), theme::key(accent)));
+        spans.push(Span::styled(format!(" {label} "), theme::muted()));
+        spans.push(Span::raw(" "));
+    }
+    Line::from(spans)
+}
+
+fn panel<'a>(title: impl Into<Line<'a>>, accent: ratatui::style::Color) -> Block<'a> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(accent).bg(theme::SURFACE))
+        .title_style(theme::title(accent))
+        .title(title)
+        .style(theme::panel())
+}
+
 fn centered(x: u16, y: u16, area: Rect) -> Rect {
     let v = Layout::vertical([
         Constraint::Percentage((100 - y) / 2),

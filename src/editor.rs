@@ -6,7 +6,10 @@ use tempfile::Builder;
 use crate::terminal;
 
 pub fn edit_json(terminal: &mut terminal::Tui, value: &Value) -> anyhow::Result<Option<Value>> {
-    let mut file = Builder::new().prefix("mtui-").suffix(".json").tempfile()?;
+    let mut file = Builder::new()
+        .prefix("lazymeili-")
+        .suffix(".json")
+        .tempfile()?;
     file.write_all(serde_json::to_string_pretty(value)?.as_bytes())?;
     file.as_file_mut().sync_all()?;
 

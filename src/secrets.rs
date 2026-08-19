@@ -12,7 +12,8 @@ use tempfile::NamedTempFile;
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
-const SERVICE: &str = "dev.mtui.mtui";
+const SERVICE: &str = "dev.lazymeili.lazymeili";
+const LEGACY_SERVICE: &str = "dev.mtui.mtui";
 
 pub trait SecretStore {
     fn get(&self, id: Uuid) -> anyhow::Result<Option<String>>;
@@ -33,16 +34,41 @@ impl NativeStore {
     }
 
     fn entry(id: Uuid) -> anyhow::Result<keyring::Entry> {
-        keyring::Entry::new(SERVICE, &id.to_string())
+        Self::entry_for(SERVICE, id)
+    }
+
+    fn entry_for(service: &str, id: Uuid) -> anyhow::Result<keyring::Entry> {
+        keyring::Entry::new(service, &id.to_string())
             .map_err(|_| anyhow::anyhow!("native secret store is unavailable"))
+    }
+
+    fn delete_entry(entry: &keyring::Entry) -> anyhow::Result<()> {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => anyhow::bail!("cannot remove secret from native secret store"),
+        }
     }
 }
 
 impl SecretStore for NativeStore {
     fn get(&self, id: Uuid) -> anyhow::Result<Option<String>> {
-        match Self::entry(id)?.get_password() {
+        let entry = Self::entry(id)?;
+        match entry.get_password() {
             Ok(value) => Ok(Some(value)),
-            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(keyring::Error::NoEntry) => {
+                let legacy = Self::entry_for(LEGACY_SERVICE, id)?;
+                match legacy.get_password() {
+                    Ok(value) => {
+                        entry
+                            .set_password(&value)
+                            .map_err(|_| anyhow::anyhow!("cannot migrate native secret"))?;
+                        Self::delete_entry(&legacy)?;
+                        Ok(Some(value))
+                    }
+                    Err(keyring::Error::NoEntry) => Ok(None),
+                    Err(_) => anyhow::bail!("cannot read from native secret store"),
+                }
+            }
             Err(_) => anyhow::bail!("cannot read from native secret store"),
         }
     }
@@ -50,14 +76,14 @@ impl SecretStore for NativeStore {
     fn set(&mut self, id: Uuid, secret: &str) -> anyhow::Result<()> {
         Self::entry(id)?
             .set_password(secret)
-            .map_err(|_| anyhow::anyhow!("cannot write to native secret store"))
+            .map_err(|_| anyhow::anyhow!("cannot write to native secret store"))?;
+        let legacy = Self::entry_for(LEGACY_SERVICE, id)?;
+        Self::delete_entry(&legacy)
     }
 
     fn delete(&mut self, id: Uuid) -> anyhow::Result<()> {
-        match Self::entry(id)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(_) => anyhow::bail!("cannot remove secret from native secret store"),
-        }
+        Self::delete_entry(&Self::entry(id)?)?;
+        Self::delete_entry(&Self::entry_for(LEGACY_SERVICE, id)?)
     }
 }
 

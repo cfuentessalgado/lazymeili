@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     action::Action,
-    config::{Application, Config, ConfigStore, normalize_url},
+    config::{Application, Config, ConfigStore, ConnectionColor, normalize_url},
     meili::{
         self, ApiKey, Capabilities, CreateKey, EnqueuedTask, HttpService, IndexInfo, SearchQuery,
         SearchResult, ServerVersion, Stats, Task, TaskFilter,
@@ -48,6 +48,10 @@ impl Route {
 pub enum Overlay {
     Help,
     KeyForm(KeyFormState),
+    ColorPicker {
+        app_id: Uuid,
+        cursor: usize,
+    },
     Message {
         title: String,
         body: String,
@@ -398,7 +402,7 @@ impl App {
     pub fn is_editing(&self) -> bool {
         matches!(
             self.overlay,
-            Some(Overlay::Input { .. } | Overlay::KeyForm(_))
+            Some(Overlay::Input { .. } | Overlay::KeyForm(_) | Overlay::ColorPicker { .. })
         )
     }
 
@@ -414,6 +418,10 @@ impl App {
         }
         if matches!(self.overlay, Some(Overlay::KeyForm(_))) {
             return self.update_key_form(action);
+        }
+        if matches!(self.overlay, Some(Overlay::ColorPicker { .. })) {
+            self.update_color_picker(action);
+            return Vec::new();
         }
         if let Some(overlay) = &mut self.overlay {
             match action {
@@ -488,6 +496,7 @@ impl App {
             Action::Create => return self.create(),
             Action::Edit => return self.edit(),
             Action::Delete => return self.delete(),
+            Action::Color => self.pick_connection_color(),
             Action::Search => {
                 if self.route == Route::Tasks {
                     self.prompt(
@@ -674,6 +683,60 @@ impl App {
             _ => {}
         }
         Vec::new()
+    }
+
+    fn pick_connection_color(&mut self) {
+        if self.route != Route::Applications {
+            return;
+        }
+        let Some(app) = self.config.applications.get(self.selected) else {
+            return;
+        };
+        let cursor = ConnectionColor::ALL
+            .iter()
+            .position(|color| *color == app.color)
+            .unwrap_or(0);
+        self.overlay = Some(Overlay::ColorPicker {
+            app_id: app.id,
+            cursor,
+        });
+    }
+
+    fn update_color_picker(&mut self, action: Action) {
+        let Some(Overlay::ColorPicker { app_id, cursor }) = &mut self.overlay else {
+            return;
+        };
+        match action {
+            Action::Escape => self.overlay = None,
+            Action::Next | Action::Right => {
+                *cursor = (*cursor + 1) % ConnectionColor::ALL.len();
+            }
+            Action::Previous | Action::Left => {
+                *cursor = cursor
+                    .checked_sub(1)
+                    .unwrap_or(ConnectionColor::ALL.len() - 1);
+            }
+            Action::Confirm => {
+                let app_id = *app_id;
+                let color = ConnectionColor::ALL[*cursor];
+                if let Some(app) = self
+                    .config
+                    .applications
+                    .iter_mut()
+                    .find(|app| app.id == app_id)
+                {
+                    app.color = color;
+                }
+                match self.store.save(&self.config) {
+                    Ok(()) => {
+                        self.overlay = None;
+                        self.notice = Some(format!("Connection color set to {}", color.label()));
+                    }
+                    Err(error) => self.error(error.to_string()),
+                }
+            }
+            _ => {}
+        }
     }
 
     fn prompt(&mut self, purpose: InputPurpose, title: &str, value: String, secret: bool) {
@@ -886,6 +949,7 @@ impl App {
             name: self.draft.name.clone(),
             url: self.draft.url.clone(),
             has_api_key: !key.is_empty(),
+            color: ConnectionColor::default(),
         };
         if let Err(error) = self.store.upsert(&mut self.config, app) {
             let _ = self.secrets.delete(id);
@@ -920,11 +984,18 @@ impl App {
             }
             true
         };
+        let color = self
+            .config
+            .applications
+            .iter()
+            .find(|app| app.id == id)
+            .map_or_else(ConnectionColor::default, |app| app.color);
         let edited = Application {
             id,
             name: self.draft.name.clone(),
             url: self.draft.url.clone(),
             has_api_key,
+            color,
         };
         if let Err(error) = self.store.upsert(&mut self.config, edited) {
             self.error(error.to_string());
@@ -955,6 +1026,10 @@ impl App {
         } else {
             None
         };
+        // Do not keep the previous client while a new connection is pending.
+        // The UI must never identify a stale client as the active connection.
+        self.service = None;
+        self.version = None;
         self.loading = true;
         Some(Command::Connect { url: app.url, key })
     }

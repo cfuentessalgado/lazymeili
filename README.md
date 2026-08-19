@@ -1,6 +1,8 @@
-# mtui
+# LazyMeili
 
-`mtui` is an English-language terminal UI for managing several Meilisearch applications. It follows the core workflows in [`meilisearch-ui`](https://github.com/eyeix/meilisearch-ui) without requiring a browser or CORS configuration.
+LazyMeili is an independent terminal UI for managing several Meilisearch applications. It follows the core workflows in [`meilisearch-ui`](https://github.com/eyeix/meilisearch-ui) without requiring a browser or CORS configuration.
+
+LazyMeili is not affiliated with or endorsed by Meilisearch.
 
 ## Status
 
@@ -24,12 +26,12 @@ Download the archive for your platform from GitHub Releases:
 - `aarch64-apple-darwin` for Apple Silicon macOS
 - `x86_64-unknown-linux-gnu` for x86_64 glibc Linux
 
-Verify its adjacent SHA-256 file, extract `mtui`, and move it to a directory in `PATH`.
+Verify its adjacent SHA-256 file, extract `lazymeili`, and move it to a directory in `PATH`.
 
 ```sh
-shasum -a 256 -c mtui-*.tar.gz.sha256
-sudo install -m 0755 mtui /usr/local/bin/mtui
-mtui
+shasum -a 256 -c lazymeili-*.tar.gz.sha256
+sudo install -m 0755 lazymeili /usr/local/bin/lazymeili
+lazymeili
 ```
 
 ## Requirements
@@ -38,16 +40,18 @@ mtui
 - `$VISUAL` or `$EDITOR` for documents, advanced search forms, key forms, and settings changes.
 - macOS Keychain or Linux Secret Service for preferred credential storage.
 
-If Linux Secret Service is unavailable, `mtui` creates an `age` passphrase-encrypted fallback vault. The vault is unlocked before the TUI starts. There is no passphrase recovery. To discard it and all secrets in it, run `mtui --reset-vault` and type the requested confirmation.
+If Linux Secret Service is unavailable, `lazymeili` creates an `age` passphrase-encrypted fallback vault. The vault is unlocked before the TUI starts. There is no passphrase recovery. To discard it and all secrets in it, run `lazymeili --reset-vault` and type the requested confirmation.
 
 ## Configuration and secrets
 
 Non-secret application metadata is a versioned TOML file in the platform config directory:
 
-- macOS: `~/Library/Application Support/dev.mtui.mtui/config.toml`
-- Linux: `${XDG_CONFIG_HOME:-~/.config}/mtui/config.toml` (the exact path follows the OS directory API)
+- macOS: `~/Library/Application Support/dev.lazymeili.lazymeili/config.toml`
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/lazymeili/config.toml` (the exact path follows the OS directory API)
 
-API keys are never written to TOML. Native stores use service name `dev.mtui.mtui` and the stable application UUID as the account. Metadata and fallback-vault files use mode `0600`. Writes use an atomic temporary-file replacement.
+API keys are never written to TOML. Native stores use service name `dev.lazymeili.lazymeili` and the stable application UUID as the account. Metadata and fallback-vault files use mode `0600`. Writes use an atomic temporary-file replacement.
+
+On first start, LazyMeili moves configuration and fallback-vault files from the former `mtui` paths. Native credentials move to the new service name when they are first read.
 
 Logs and errors do not include API keys. Settings previews hide fields with names such as `apiKey`, `password`, `secret`, and `token`.
 
@@ -61,6 +65,7 @@ Logs and errors do not include API keys. Settings previews hide fields with name
 | `n` | New application, index, document upload, or API key |
 | `e` | Edit primary key, document, settings, or API key |
 | `d` | Delete selected item or cancel a running task |
+| `c` | Assign a color to the selected application |
 | `/` | Advanced search JSON, index filter, or task filter |
 | `y` | Yank a newly created API key to the clipboard with OSC 52 |
 | `a` | Go to application selection |
@@ -73,9 +78,11 @@ Logs and errors do not include API keys. Settings previews hide fields with name
 
 Text inputs disable Vim command keys. Destructive operations require typing the target UID or name. Index deletion removes its documents, settings, and task history.
 
+On Applications, press `c` to assign a persistent color such as red for production or lime for a read-only connection. The color appears in the application table and beside the active connection in the header. It also becomes the accent color for tabs, borders, selected rows, forms, and key hints while that connection is active. Colors are manual labels. They do not inspect or change API key permissions.
+
 ### Search form
 
-Press `/` on Documents. `mtui` opens a JSON form in `$VISUAL` or `$EDITOR`. It supports query, offset/limit, filter, sort expressions, ranking score, ranking score threshold, and hybrid embedder/semantic ratio. Fields unsupported by an older connected server are shown as unavailable in the dashboard and can return a clear server error.
+Press `/` on Documents. `lazymeili` opens a JSON form in `$VISUAL` or `$EDITOR`. It supports query, offset/limit, filter, sort expressions, ranking score, ranking score threshold, and hybrid embedder/semantic ratio. Fields unsupported by an older connected server are shown as unavailable in the dashboard and can return a clear server error.
 
 ### Task filters
 
@@ -89,21 +96,21 @@ Documents and tasks refresh every seven seconds while their screen is active.
 
 ### JSON editing
 
-`mtui` writes a restrictive temporary `.json` file, suspends the alternate screen, starts `$VISUAL` and then `$EDITOR`, validates the saved JSON, deletes the temporary file, and restores the TUI. Settings changes show a secret-redacted unified diff and require an additional confirmation.
+`lazymeili` writes a restrictive temporary `.json` file, suspends the alternate screen, starts `$VISUAL` and then `$EDITOR`, validates the saved JSON, deletes the temporary file, and restores the TUI. Settings changes show a secret-redacted unified diff and require an additional confirmation.
 
 A document upload must be a JSON array. Editing one document sends a partial document update. A primary key is required to delete a document.
 
 ### API keys
 
-Key creation uses an in-terminal form with `name`, `description`, `actions`, `indexes`, expiration, and a generated `uid`. The UID is only an identifier and cannot authenticate requests. Use Tab or the arrow keys to move between fields. Permission presets provide full access (`*`), read-only observability, read-only access to documents and settings, or minimal search-only access (`search`). The document and settings preset includes search, document reads, index reads, task reads, settings reads, statistics, metrics, and version information. It does not include create, update, delete, or cancel actions. Select Custom or change an action to set permissions manually. Press Enter on Actions to open a multi-select permission list, then use Space to toggle permissions and Enter to confirm the selection. Expiration has 30-day, 180-day, 365-day, and Never presets. Meilisearch can show the secret API key value only once. `mtui` shows that 64-character credential in a dedicated dialog after creation. Press `y` to yank it through the terminal's OSC 52 clipboard feature before closing the dialog. Clear the clipboard after use. Later key lists can show only metadata or a masked value, depending on the server version.
+Key creation uses an in-terminal form with `name`, `description`, `actions`, `indexes`, expiration, and a generated `uid`. The UID is only an identifier and cannot authenticate requests. Use Tab or the arrow keys to move between fields. Permission presets provide full access (`*`), read-only observability, read-only access to documents and settings, or minimal search-only access (`search`). The document and settings preset includes search, document reads, index reads, task reads, settings reads, statistics, metrics, and version information. It does not include create, update, delete, or cancel actions. Select Custom or change an action to set permissions manually. Press Enter on Actions to open a multi-select permission list, then use Space to toggle permissions and Enter to confirm the selection. Expiration has 30-day, 180-day, 365-day, and Never presets. Meilisearch can show the secret API key value only once. `lazymeili` shows that 64-character credential in a dedicated dialog after creation. Press `y` to yank it through the terminal's OSC 52 clipboard feature before closing the dialog. Clear the clipboard after use. Later key lists can show only metadata or a masked value, depending on the server version.
 
 ### Dumps
 
-A dump is created on the Meilisearch server. `mtui` tracks the returned task. The standard Meilisearch API cannot list or download dump files. Retrieve the file from the server's configured dump directory.
+A dump is created on the Meilisearch server. `lazymeili` tracks the returned task. The standard Meilisearch API cannot list or download dump files. Retrieve the file from the server's configured dump directory.
 
 ## Compatibility
 
-`mtui` targets the current stable Meilisearch API. It reads the server version and disables known unsupported actions on older 1.x servers. Compatibility with every historical 1.x release is not guaranteed. Permission errors usually mean the saved API key does not have the action required by the current screen. API key management requires a master key.
+`lazymeili` targets the current stable Meilisearch API. It reads the server version and disables known unsupported actions on older 1.x servers. Compatibility with every historical 1.x release is not guaranteed. Permission errors usually mean the saved API key does not have the action required by the current screen. API key management requires a master key.
 
 ## Development
 
@@ -114,7 +121,7 @@ cargo test --all-features
 cargo run
 ```
 
-Set `RUST_LOG=mtui=debug` for local diagnostics. Do not put credentials in logs or command-line arguments.
+Set `RUST_LOG=lazymeili=debug` for local diagnostics. Do not put credentials in logs or command-line arguments.
 
 Release tags run GitHub Actions builds for Apple Silicon macOS and x86_64 glibc Linux. Each archive has a SHA-256 checksum.
 

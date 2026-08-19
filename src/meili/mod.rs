@@ -300,7 +300,7 @@ impl HttpService {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(30))
-            .user_agent(concat!("mtui/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("lazymeili/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(Error::from_reqwest)?;
         Ok(Self {
@@ -583,7 +583,7 @@ mod tests {
         let client = HttpService::new(url, Some(key)).unwrap();
         client.health().await.unwrap();
         assert!(!client.version().await.unwrap().pkg_version.is_empty());
-        let uid = format!("mtui_test_{}", uuid::Uuid::new_v4().simple());
+        let uid = format!("lazymeili_test_{}", uuid::Uuid::new_v4().simple());
         let created = client.create_index(&uid, Some("id")).await.unwrap();
         wait(&client, created.task_uid).await;
         let added = client

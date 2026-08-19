@@ -65,12 +65,14 @@ async fn main() -> anyhow::Result<()> {
 
 fn prepare_vault(path: &std::path::Path) -> anyhow::Result<Option<AgeVault>> {
     if AgeVault::exists(path) {
-        let passphrase = rpassword::prompt_password("Unlock mtui secret vault: ")?;
+        let passphrase = rpassword::prompt_password("Unlock LazyMeili secret vault: ")?;
         return AgeVault::open(path.to_path_buf(), passphrase).map(Some);
     }
     #[cfg(target_os = "linux")]
     if !NativeStore::available() {
-        eprintln!("Linux Secret Service is unavailable. Create the encrypted mtui fallback vault.");
+        eprintln!(
+            "Linux Secret Service is unavailable. Create the encrypted LazyMeili fallback vault."
+        );
         let first = rpassword::prompt_password("New vault passphrase: ")?;
         let second = rpassword::prompt_password("Confirm vault passphrase: ")?;
         anyhow::ensure!(first == second, "vault passphrases did not match");

@@ -1,11 +1,11 @@
 [package]
-name = "mtui"
+name = "lazymeili"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 description = "A terminal UI for managing Meilisearch instances"
 license = "MIT"
-repository = "https://github.com/cfuentessalgado/meilisearch-cli"
+repository = "https://github.com/cfuentessalgado/lazymeili"
 keywords = ["meilisearch", "tui", "terminal", "admin"]
 categories = ["command-line-utilities"]
 

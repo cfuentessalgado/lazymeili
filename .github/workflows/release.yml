@@ -26,11 +26,11 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          archive="mtui-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
-          tar -czf "$archive" -C "target/${{ matrix.target }}/release" mtui
+          archive="lazymeili-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
+          tar -czf "$archive" -C "target/${{ matrix.target }}/release" lazymeili
           shasum -a 256 "$archive" > "$archive.sha256"
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            mtui-*.tar.gz
-            mtui-*.sha256
+            lazymeili-*.tar.gz
+            lazymeili-*.sha256
