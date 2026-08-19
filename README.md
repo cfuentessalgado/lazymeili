@@ -51,8 +51,6 @@ Non-secret application metadata is a versioned TOML file in the platform config 
 
 API keys are never written to TOML. Native stores use service name `dev.lazymeili.lazymeili` and the stable application UUID as the account. Metadata and fallback-vault files use mode `0600`. Writes use an atomic temporary-file replacement.
 
-On first start, LazyMeili moves configuration and fallback-vault files from the former `mtui` paths. Native credentials move to the new service name when they are first read.
-
 Logs and errors do not include API keys. Settings previews hide fields with names such as `apiKey`, `password`, `secret`, and `token`.
 
 ## Navigation

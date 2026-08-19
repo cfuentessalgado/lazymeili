@@ -99,33 +99,11 @@ impl Paths {
         let dirs = ProjectDirs::from("dev", "lazymeili", "lazymeili").ok_or_else(|| {
             anyhow::anyhow!("cannot determine the operating system config directory")
         })?;
-        let legacy_dirs = ProjectDirs::from("dev", "mtui", "mtui").ok_or_else(|| {
-            anyhow::anyhow!("cannot determine the operating system config directory")
-        })?;
-        let paths = Self {
+        Ok(Self {
             config: dirs.config_dir().join("config.toml"),
             vault: dirs.config_dir().join("secrets.age"),
-        };
-        migrate_legacy_file(&legacy_dirs.config_dir().join("config.toml"), &paths.config)?;
-        migrate_legacy_file(&legacy_dirs.config_dir().join("secrets.age"), &paths.vault)?;
-        Ok(paths)
+        })
     }
-}
-
-fn migrate_legacy_file(source: &Path, destination: &Path) -> anyhow::Result<()> {
-    if !source.exists() || destination.exists() {
-        return Ok(());
-    }
-    let parent = destination
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("invalid config path"))?;
-    fs::create_dir_all(parent)?;
-    if fs::rename(source, destination).is_err() {
-        fs::copy(source, destination)?;
-        set_private(destination)?;
-        fs::remove_file(source)?;
-    }
-    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -242,20 +220,6 @@ mod tests {
                 0o600
             );
         }
-    }
-
-    #[test]
-    fn migrates_legacy_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("old/config.toml");
-        let destination = dir.path().join("new/config.toml");
-        fs::create_dir_all(source.parent().unwrap()).unwrap();
-        fs::write(&source, "version = 1").unwrap();
-
-        migrate_legacy_file(&source, &destination).unwrap();
-
-        assert!(!source.exists());
-        assert_eq!(fs::read_to_string(destination).unwrap(), "version = 1");
     }
 
     #[test]
