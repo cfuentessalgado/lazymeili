@@ -1,4 +1,4 @@
-name: Release
+name: Build release assets
 
 on:
   push:
@@ -37,24 +37,3 @@ jobs:
             lazymeili-*.tar.gz
             lazymeili-*.sha256
           if-no-files-found: error
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download release files
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Create draft release and upload files
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
-        with:
-          draft: true
-          files: dist/*
-      - name: Publish immutable release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
